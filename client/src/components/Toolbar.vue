@@ -138,7 +138,7 @@ void props;
 
     <button
       type="button"
-      class="px-3 py-2 rounded-lg text-sm font-medium bg-gray-900 text-white hover:bg-gray-700 transition"
+      class="px-3 py-2 rounded-lg text-sm font-medium bg-gray-900 text-white hover:bg-gray-700 transition whitespace-nowrap"
       @click="copyLink"
     >
       {{ copied ? 'Copied!' : 'Copy link' }}
