@@ -63,7 +63,7 @@ const emitCursor = throttle((x: number, y: number) => {
     x,
     y,
   });
-}, 50);
+}, 16);
 
 function onPointerMove() {
   const p = stagePointer();

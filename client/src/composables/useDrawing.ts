@@ -2,8 +2,8 @@ import { nanoid } from 'nanoid';
 import type { TypedSocket } from './useSocket';
 import type { ClientUser, Stroke, Tool } from '../types/shared';
 
-const FLUSH_INTERVAL_MS = 50;
-const MIN_POINT_DISTANCE = 3;
+const FLUSH_INTERVAL_MS = 16;
+const MIN_POINT_DISTANCE = 2;
 
 export type DrawingDeps = {
   socket: TypedSocket;
