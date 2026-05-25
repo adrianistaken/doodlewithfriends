@@ -67,6 +67,15 @@ export function useRoom(roomId: string) {
       img.y = y;
     }
   };
+  const onImageRemove = ({ imageId }: { imageId: string }) => {
+    data.images = data.images.filter((i) => i.id !== imageId);
+  };
+  const onStrokeAdd = ({ stroke }: { stroke: Stroke }) => {
+    if (!data.strokes.find((s) => s.id === stroke.id)) data.strokes.push(stroke);
+  };
+  const onStrokeRemove = ({ strokeId }: { strokeId: string }) => {
+    data.strokes = data.strokes.filter((s) => s.id !== strokeId);
+  };
 
   onMounted(() => {
     socket.on('room:state', onState);
@@ -79,6 +88,9 @@ export function useRoom(roomId: string) {
     socket.on('board:clear', onBoardClear);
     socket.on('image:add', onImageAdd);
     socket.on('image:move', onImageMove);
+    socket.on('image:remove', onImageRemove);
+    socket.on('stroke:add', onStrokeAdd);
+    socket.on('stroke:remove', onStrokeRemove);
     socket.on('connect', sendJoin);
     if (socket.connected) sendJoin();
   });
@@ -94,6 +106,9 @@ export function useRoom(roomId: string) {
     socket.off('board:clear', onBoardClear);
     socket.off('image:add', onImageAdd);
     socket.off('image:move', onImageMove);
+    socket.off('image:remove', onImageRemove);
+    socket.off('stroke:add', onStrokeAdd);
+    socket.off('stroke:remove', onStrokeRemove);
     socket.off('connect', sendJoin);
   });
 

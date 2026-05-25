@@ -75,3 +75,18 @@ export const imageMoveSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
 });
+
+export const imageRemoveSchema = z.object({
+  roomId: z.string().min(1).max(32),
+  imageId: z.string().min(1).max(64),
+});
+
+export const strokeAddSchema = z.object({
+  roomId: z.string().min(1).max(32),
+  stroke: strokeSchema,
+});
+
+export const strokeRemoveSchema = z.object({
+  roomId: z.string().min(1).max(32),
+  strokeId: z.string().min(1).max(64),
+});

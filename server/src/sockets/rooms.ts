@@ -122,6 +122,20 @@ export function moveImage(roomId: string, imageId: string, x: number, y: number)
   room.updatedAt = Date.now();
 }
 
+export function removeImage(roomId: string, imageId: string): void {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  room.images = room.images.filter((i) => i.id !== imageId);
+  room.updatedAt = Date.now();
+}
+
+export function removeStroke(roomId: string, strokeId: string): void {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  room.strokes = room.strokes.filter((s) => s.id !== strokeId);
+  room.updatedAt = Date.now();
+}
+
 export function startCleanupLoop(): NodeJS.Timeout {
   return setInterval(() => {
     const cutoff = Date.now() - ROOM_INACTIVITY_MS;

@@ -10,6 +10,8 @@ import {
   finalizeStroke,
   getRoom,
   moveImage,
+  removeImage,
+  removeStroke,
   removeUserBySocket,
   startCleanupLoop,
 } from './rooms.js';
@@ -18,8 +20,11 @@ import {
   cursorMoveSchema,
   imageAddSchema,
   imageMoveSchema,
+  imageRemoveSchema,
   roomJoinSchema,
+  strokeAddSchema,
   strokeEndSchema,
+  strokeRemoveSchema,
   strokeStartSchema,
   strokeUpdateSchema,
 } from '../lib/validation.js';
@@ -128,6 +133,33 @@ export function attachSocketIo(httpServer: HttpServer, corsOrigin: string) {
       if (socket.data.roomId !== roomId) return;
       moveImage(roomId, imageId, x, y);
       socket.to(roomId).emit('image:move', parsed.data);
+    });
+
+    socket.on('image:remove', (raw) => {
+      const parsed = imageRemoveSchema.safeParse(raw);
+      if (!parsed.success) return;
+      const { roomId, imageId } = parsed.data;
+      if (socket.data.roomId !== roomId) return;
+      removeImage(roomId, imageId);
+      socket.to(roomId).emit('image:remove', parsed.data);
+    });
+
+    socket.on('stroke:add', (raw) => {
+      const parsed = strokeAddSchema.safeParse(raw);
+      if (!parsed.success) return;
+      const { roomId, stroke } = parsed.data;
+      if (socket.data.roomId !== roomId) return;
+      addStroke(roomId, stroke);
+      socket.to(roomId).emit('stroke:add', parsed.data);
+    });
+
+    socket.on('stroke:remove', (raw) => {
+      const parsed = strokeRemoveSchema.safeParse(raw);
+      if (!parsed.success) return;
+      const { roomId, strokeId } = parsed.data;
+      if (socket.data.roomId !== roomId) return;
+      removeStroke(roomId, strokeId);
+      socket.to(roomId).emit('stroke:remove', parsed.data);
     });
 
     socket.on('disconnect', () => {

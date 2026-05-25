@@ -9,6 +9,8 @@ const props = defineProps<{
   size: number;
   connected: boolean;
   userCount: number;
+  canUndo: boolean;
+  canRedo: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -18,6 +20,8 @@ const emit = defineEmits<{
   (e: 'clear'): void;
   (e: 'copy-link'): void;
   (e: 'upload-image', file: File): void;
+  (e: 'undo'): void;
+  (e: 'redo'): void;
 }>();
 
 const fileInput = ref<HTMLInputElement | null>(null);
@@ -88,6 +92,33 @@ void props;
         <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
         <path d="M22 21H7" />
         <path d="m5 11 9 9" />
+      </svg>
+    </button>
+
+    <div class="w-px h-6 bg-gray-200 mx-1" />
+
+    <button
+      type="button"
+      class="w-9 h-9 flex items-center justify-center rounded-lg text-gray-700 hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+      title="Undo (⌘Z)"
+      :disabled="!canUndo"
+      @click="emit('undo')"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 7v6h6" />
+        <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="w-9 h-9 flex items-center justify-center rounded-lg text-gray-700 hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+      title="Redo (⌘⇧Z)"
+      :disabled="!canRedo"
+      @click="emit('redo')"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 7v6h-6" />
+        <path d="M3 17a9 9 0 0 1 15-6.7L21 13" />
       </svg>
     </button>
 

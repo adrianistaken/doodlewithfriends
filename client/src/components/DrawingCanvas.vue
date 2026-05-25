@@ -25,6 +25,11 @@ const props = defineProps<{
 
 const viewport = defineModel<Viewport>('viewport', { required: true });
 
+const emit = defineEmits<{
+  'stroke-complete': [stroke: Stroke];
+  'image-moved': [imageId: string, from: { x: number; y: number }, to: { x: number; y: number }];
+}>();
+
 const { width, height } = useWindowSize();
 
 const stageRef = ref<{ getNode: () => import('konva').default.Stage } | null>(null);
@@ -61,7 +66,11 @@ const controller = createDrawingController({
   },
   finalizeStroke: (id, pts) => {
     const s = props.strokes.find((s) => s.id === id);
-    if (s) s.points = pts;
+    if (s) {
+      s.points = pts;
+      // Snapshot of the completed stroke for undo tracking.
+      emit('stroke-complete', { ...s, points: [...pts] });
+    }
   },
   getStrokePoints: (id) => props.strokes.find((s) => s.id === id)?.points,
 });
@@ -141,7 +150,13 @@ const isPanning = ref(false);
 const panStart = { screen: { x: 0, y: 0 }, viewport: { x: 0, y: 0 } };
 
 // Image-drag state. The hand tool over an image moves it instead of panning.
-type ImageDrag = { imageId: string; offsetX: number; offsetY: number };
+type ImageDrag = {
+  imageId: string;
+  offsetX: number;
+  offsetY: number;
+  startX: number;
+  startY: number;
+};
 const imageDrag = ref<ImageDrag | null>(null);
 
 type KonvaEvt = { evt: MouseEvent | TouchEvent };
@@ -191,6 +206,8 @@ function onPointerDown(e: KonvaEvt) {
         imageId: img.id,
         offsetX: wp.x - img.x,
         offsetY: wp.y - img.y,
+        startX: img.x,
+        startY: img.y,
       };
       return;
     }
@@ -252,6 +269,9 @@ function onPointerUp() {
         x: img.x,
         y: img.y,
       });
+      if (img.x !== drag.startX || img.y !== drag.startY) {
+        emit('image-moved', drag.imageId, { x: drag.startX, y: drag.startY }, { x: img.x, y: img.y });
+      }
     }
     imageDrag.value = null;
     return;
@@ -360,6 +380,9 @@ onBeforeUnmount(() => {
 // are baked into this canvas (destination-out), so the erased pixels travel with
 // the image when it's dragged. Other strokes stay in the strokes layer above.
 const imageCanvases = ref(new Map<string, HTMLCanvasElement>());
+// Keep the loaded original (un-erased) image so we can rebuild the canvas from
+// scratch when an eraser stroke is undone.
+const originalImages = new Map<string, HTMLImageElement>();
 
 // Tracks, per (image, eraser-stroke), how many points we've already baked in.
 // Lets us paint only new segments incrementally as strokes stream in.
@@ -370,6 +393,7 @@ function ensureImageCanvas(image: ImageObject) {
   if (imageCanvases.value.has(image.id)) return;
   const img = new Image();
   img.onload = () => {
+    originalImages.set(image.id, img);
     const canvas = document.createElement('canvas');
     canvas.width = image.width;
     canvas.height = image.height;
@@ -381,6 +405,22 @@ function ensureImageCanvas(image: ImageObject) {
     processEraserBakes();
   };
   img.src = image.url;
+}
+
+// Clear all baked erasures from an image's canvas (used when an eraser stroke is
+// undone — the image needs to be redrawn pristine and remaining strokes re-baked).
+function resetImageCanvas(imageId: string) {
+  const img = props.images.find((i) => i.id === imageId);
+  const canvas = imageCanvases.value.get(imageId);
+  const original = originalImages.get(imageId);
+  if (!img || !canvas || !original) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(original, 0, 0, img.width, img.height);
+  for (const key of Array.from(bakedPointCount.keys())) {
+    if (key.startsWith(`${imageId}:`)) bakedPointCount.delete(key);
+  }
 }
 
 const visibleImages = computed(() => {
@@ -445,6 +485,33 @@ function batchRedraw() {
 }
 
 function processEraserBakes() {
+  // Detect bakes that reference strokes or images that no longer exist.
+  // For images: drop the canvas + original reference and any baked entries.
+  // For strokes: rebuild affected images from pristine so the undone eraser disappears.
+  const existingStrokeIds = new Set(props.strokes.map((s) => s.id));
+  const existingImageIds = new Set(props.images.map((i) => i.id));
+
+  for (const imageId of Array.from(imageCanvases.value.keys())) {
+    if (!existingImageIds.has(imageId)) {
+      imageCanvases.value.delete(imageId);
+      originalImages.delete(imageId);
+      for (const key of Array.from(bakedPointCount.keys())) {
+        if (key.startsWith(`${imageId}:`)) bakedPointCount.delete(key);
+      }
+    }
+  }
+
+  const imagesToReset = new Set<string>();
+  for (const key of bakedPointCount.keys()) {
+    const sep = key.indexOf(':');
+    const imageId = key.slice(0, sep);
+    const strokeId = key.slice(sep + 1);
+    if (!existingStrokeIds.has(strokeId) && existingImageIds.has(imageId)) {
+      imagesToReset.add(imageId);
+    }
+  }
+  for (const imageId of imagesToReset) resetImageCanvas(imageId);
+
   let anyBaked = false;
   for (const stroke of props.strokes) {
     if (stroke.tool !== 'eraser') continue;
@@ -466,8 +533,11 @@ function processEraserBakes() {
       anyBaked = true;
     }
   }
-  if (anyBaked) batchRedraw();
+  if (anyBaked || imagesToReset.size > 0) batchRedraw();
 }
+
+// Strokes and images can both signal a rebuild — watch both.
+watch(() => props.images, processEraserBakes, { deep: true });
 
 watch(() => props.strokes, processEraserBakes, { deep: true });
 

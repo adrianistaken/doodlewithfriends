@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { nanoid } from 'nanoid';
 import { useWindowSize } from '@vueuse/core';
 import DrawingCanvas from '../components/DrawingCanvas.vue';
@@ -8,7 +8,7 @@ import Toolbar from '../components/Toolbar.vue';
 import { useRoom } from '../composables/useRoom';
 import { useSocket } from '../composables/useSocket';
 import { clampScale, defaultViewport, type Viewport } from '../lib/viewport';
-import type { ImageObject, Tool } from '../types/shared';
+import type { ImageObject, Stroke, Tool } from '../types/shared';
 
 const props = defineProps<{ roomId: string }>();
 
@@ -22,6 +22,113 @@ const size = ref(4);
 
 // DrawingCanvas overrides this immediately on mount with defaultViewport(w, h).
 const viewport = ref<Viewport>({ scale: 1, x: 0, y: 0 });
+
+// Per-user undo/redo. Only the local user's actions land in these stacks —
+// undo/redo never reaches across users.
+type UndoAction =
+  | { type: 'stroke-add'; stroke: Stroke }
+  | { type: 'image-add'; image: ImageObject }
+  | { type: 'image-move'; imageId: string; from: { x: number; y: number }; to: { x: number; y: number } };
+
+const undoStack = ref<UndoAction[]>([]);
+const redoStack = ref<UndoAction[]>([]);
+const canUndo = computed(() => undoStack.value.length > 0);
+const canRedo = computed(() => redoStack.value.length > 0);
+
+function pushUndo(action: UndoAction) {
+  undoStack.value.push(action);
+  redoStack.value = [];
+}
+
+function apply(action: UndoAction) {
+  switch (action.type) {
+    case 'stroke-add':
+      if (!data.strokes.find((s) => s.id === action.stroke.id)) data.strokes.push(action.stroke);
+      socket.emit('stroke:add', { roomId: props.roomId, stroke: action.stroke });
+      break;
+    case 'image-add':
+      if (!data.images.find((i) => i.id === action.image.id)) data.images.push(action.image);
+      socket.emit('image:add', { roomId: props.roomId, image: action.image });
+      break;
+    case 'image-move': {
+      const img = data.images.find((i) => i.id === action.imageId);
+      if (img) {
+        img.x = action.to.x;
+        img.y = action.to.y;
+      }
+      socket.emit('image:move', {
+        roomId: props.roomId,
+        imageId: action.imageId,
+        x: action.to.x,
+        y: action.to.y,
+      });
+      break;
+    }
+  }
+}
+
+function applyInverse(action: UndoAction) {
+  switch (action.type) {
+    case 'stroke-add':
+      data.strokes = data.strokes.filter((s) => s.id !== action.stroke.id);
+      socket.emit('stroke:remove', { roomId: props.roomId, strokeId: action.stroke.id });
+      break;
+    case 'image-add':
+      data.images = data.images.filter((i) => i.id !== action.image.id);
+      socket.emit('image:remove', { roomId: props.roomId, imageId: action.image.id });
+      break;
+    case 'image-move': {
+      const img = data.images.find((i) => i.id === action.imageId);
+      if (img) {
+        img.x = action.from.x;
+        img.y = action.from.y;
+      }
+      socket.emit('image:move', {
+        roomId: props.roomId,
+        imageId: action.imageId,
+        x: action.from.x,
+        y: action.from.y,
+      });
+      break;
+    }
+  }
+}
+
+function undo() {
+  const action = undoStack.value.pop();
+  if (!action) return;
+  applyInverse(action);
+  redoStack.value.push(action);
+}
+
+function redo() {
+  const action = redoStack.value.pop();
+  if (!action) return;
+  apply(action);
+  undoStack.value.push(action);
+}
+
+function onStrokeComplete(stroke: Stroke) {
+  pushUndo({ type: 'stroke-add', stroke });
+}
+
+function onImageMoved(imageId: string, from: { x: number; y: number }, to: { x: number; y: number }) {
+  pushUndo({ type: 'image-move', imageId, from, to });
+}
+
+function onUndoKey(e: KeyboardEvent) {
+  const target = e.target as HTMLElement | null;
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const key = e.key.toLowerCase();
+  if (key === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    undo();
+  } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+    e.preventDefault();
+    redo();
+  }
+}
 
 const remoteCursors = computed(() =>
   data.users
@@ -101,6 +208,7 @@ async function addImageFromFile(file: File) {
   };
   data.images.push(image);
   socket.emit('image:add', { roomId: props.roomId, image });
+  pushUndo({ type: 'image-add', image });
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -138,6 +246,11 @@ function onPaste(e: ClipboardEvent) {
 
 onMounted(() => {
   document.addEventListener('paste', onPaste);
+  window.addEventListener('keydown', onUndoKey);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener('paste', onPaste);
+  window.removeEventListener('keydown', onUndoKey);
 });
 </script>
 
@@ -155,6 +268,8 @@ onMounted(() => {
       :color="color"
       :size="size"
       @update:viewport="viewport = $event"
+      @stroke-complete="onStrokeComplete"
+      @image-moved="onImageMoved"
     />
     <RemoteCursor
       v-for="cursor in remoteCursors"
@@ -171,12 +286,16 @@ onMounted(() => {
       :size="size"
       :connected="connected"
       :user-count="data.users.length"
+      :can-undo="canUndo"
+      :can-redo="canRedo"
       @update:tool="tool = $event"
       @update:color="color = $event"
       @update:size="size = $event"
       @clear="clearBoard"
       @copy-link="copyLink"
       @upload-image="addImageFromFile"
+      @undo="undo"
+      @redo="redo"
     />
 
     <div class="absolute bottom-4 right-4 z-10 flex items-center gap-0.5 px-1 py-1 bg-white/95 backdrop-blur rounded-xl shadow-lg border border-gray-200">

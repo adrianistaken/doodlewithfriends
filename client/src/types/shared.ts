@@ -90,6 +90,21 @@ export type ImageMovePayload = {
   y: number;
 };
 
+export type ImageRemovePayload = {
+  roomId: string;
+  imageId: string;
+};
+
+export type StrokeAddPayload = {
+  roomId: string;
+  stroke: Stroke;
+};
+
+export type StrokeRemovePayload = {
+  roomId: string;
+  strokeId: string;
+};
+
 export type UserJoinedPayload = { user: RoomUser };
 export type UserLeftPayload = { userId: string };
 
@@ -101,9 +116,12 @@ export type ServerToClientEvents = {
   'stroke:start': (payload: StrokeStartPayload) => void;
   'stroke:update': (payload: StrokeUpdatePayload) => void;
   'stroke:end': (payload: StrokeEndPayload) => void;
+  'stroke:add': (payload: StrokeAddPayload) => void;
+  'stroke:remove': (payload: StrokeRemovePayload) => void;
   'board:clear': (payload: BoardClearPayload) => void;
   'image:add': (payload: ImageAddPayload) => void;
   'image:move': (payload: ImageMovePayload) => void;
+  'image:remove': (payload: ImageRemovePayload) => void;
 };
 
 export type ClientToServerEvents = {
@@ -113,7 +131,10 @@ export type ClientToServerEvents = {
   'stroke:start': (payload: StrokeStartPayload) => void;
   'stroke:update': (payload: StrokeUpdatePayload) => void;
   'stroke:end': (payload: StrokeEndPayload) => void;
+  'stroke:add': (payload: StrokeAddPayload) => void;
+  'stroke:remove': (payload: StrokeRemovePayload) => void;
   'board:clear': (payload: BoardClearPayload) => void;
   'image:add': (payload: ImageAddPayload) => void;
   'image:move': (payload: ImageMovePayload) => void;
+  'image:remove': (payload: ImageRemovePayload) => void;
 };
