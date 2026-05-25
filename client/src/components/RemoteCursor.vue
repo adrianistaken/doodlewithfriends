@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import type { Viewport } from '../lib/viewport';
 
 const props = defineProps<{
   x: number;
   y: number;
   name: string;
   color: string;
+  viewport: Viewport;
 }>();
 
 const displayX = ref(props.x);
 const displayY = ref(props.y);
 
-// Higher = snappier response, lower = smoother but laggier. 25 feels close to native.
 const SMOOTHING = 25;
-// Snap if we ever drift more than this — handles teleports (zoom, resize).
 const SNAP_DISTANCE = 600;
 
 let rafId: number | null = null;
@@ -40,6 +40,11 @@ function tick(now: number) {
   rafId = requestAnimationFrame(tick);
 }
 
+const screen = computed(() => ({
+  x: displayX.value * props.viewport.scale + props.viewport.x,
+  y: displayY.value * props.viewport.scale + props.viewport.y,
+}));
+
 onMounted(() => {
   rafId = requestAnimationFrame(tick);
 });
@@ -51,7 +56,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     class="pointer-events-none absolute z-20"
-    :style="{ transform: `translate(${displayX}px, ${displayY}px)` }"
+    :style="{ transform: `translate(${screen.x}px, ${screen.y}px)` }"
   >
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
       <path

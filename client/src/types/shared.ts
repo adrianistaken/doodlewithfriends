@@ -1,4 +1,4 @@
-export type Tool = 'pen' | 'eraser';
+export type Tool = 'pen' | 'eraser' | 'hand';
 
 export type RoomUser = {
   id: string;

@@ -54,19 +54,41 @@ void props;
   <div class="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 px-2 py-2 bg-white/95 backdrop-blur rounded-2xl shadow-lg border border-gray-200">
     <button
       type="button"
-      class="px-3 py-2 rounded-lg text-sm font-medium transition"
-      :class="tool === 'pen' ? 'bg-indigo-500 text-white' : 'text-gray-700 hover:bg-gray-100'"
-      @click="emit('update:tool', 'pen')"
+      class="w-9 h-9 flex items-center justify-center rounded-lg transition"
+      :class="tool === 'hand' ? 'bg-indigo-500 text-white' : 'text-gray-700 hover:bg-gray-100'"
+      title="Hand (pan)"
+      @click="emit('update:tool', 'hand')"
     >
-      Pen
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 11V6a2 2 0 1 0-4 0v5" />
+        <path d="M14 10V4a2 2 0 1 0-4 0v6" />
+        <path d="M10 10.5V6a2 2 0 1 0-4 0v8" />
+        <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
+      </svg>
     </button>
     <button
       type="button"
-      class="px-3 py-2 rounded-lg text-sm font-medium transition"
+      class="w-9 h-9 flex items-center justify-center rounded-lg transition"
+      :class="tool === 'pen' ? 'bg-indigo-500 text-white' : 'text-gray-700 hover:bg-gray-100'"
+      title="Pen"
+      @click="emit('update:tool', 'pen')"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="w-9 h-9 flex items-center justify-center rounded-lg transition"
       :class="tool === 'eraser' ? 'bg-indigo-500 text-white' : 'text-gray-700 hover:bg-gray-100'"
+      title="Eraser"
       @click="emit('update:tool', 'eraser')"
     >
-      Eraser
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
+        <path d="M22 21H7" />
+        <path d="m5 11 9 9" />
+      </svg>
     </button>
 
     <div class="w-px h-6 bg-gray-200 mx-1" />
