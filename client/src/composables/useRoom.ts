@@ -60,6 +60,13 @@ export function useRoom(roomId: string) {
   const onImageAdd = ({ image }: { image: ImageObject }) => {
     if (!data.images.find((i) => i.id === image.id)) data.images.push(image);
   };
+  const onImageMove = ({ imageId, x, y }: { imageId: string; x: number; y: number }) => {
+    const img = data.images.find((i) => i.id === imageId);
+    if (img) {
+      img.x = x;
+      img.y = y;
+    }
+  };
 
   onMounted(() => {
     socket.on('room:state', onState);
@@ -71,6 +78,7 @@ export function useRoom(roomId: string) {
     socket.on('stroke:end', onStrokeEnd);
     socket.on('board:clear', onBoardClear);
     socket.on('image:add', onImageAdd);
+    socket.on('image:move', onImageMove);
     socket.on('connect', sendJoin);
     if (socket.connected) sendJoin();
   });
@@ -85,6 +93,7 @@ export function useRoom(roomId: string) {
     socket.off('stroke:end', onStrokeEnd);
     socket.off('board:clear', onBoardClear);
     socket.off('image:add', onImageAdd);
+    socket.off('image:move', onImageMove);
     socket.off('connect', sendJoin);
   });
 

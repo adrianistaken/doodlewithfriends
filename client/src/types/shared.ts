@@ -83,6 +83,13 @@ export type ImageAddPayload = {
   image: ImageObject;
 };
 
+export type ImageMovePayload = {
+  roomId: string;
+  imageId: string;
+  x: number;
+  y: number;
+};
+
 export type UserJoinedPayload = { user: RoomUser };
 export type UserLeftPayload = { userId: string };
 
@@ -96,6 +103,7 @@ export type ServerToClientEvents = {
   'stroke:end': (payload: StrokeEndPayload) => void;
   'board:clear': (payload: BoardClearPayload) => void;
   'image:add': (payload: ImageAddPayload) => void;
+  'image:move': (payload: ImageMovePayload) => void;
 };
 
 export type ClientToServerEvents = {
@@ -107,4 +115,5 @@ export type ClientToServerEvents = {
   'stroke:end': (payload: StrokeEndPayload) => void;
   'board:clear': (payload: BoardClearPayload) => void;
   'image:add': (payload: ImageAddPayload) => void;
+  'image:move': (payload: ImageMovePayload) => void;
 };

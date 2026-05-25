@@ -54,6 +54,7 @@ export type ServerToClientEvents = {
   'stroke:end': (payload: { roomId: string; strokeId: string; finalPoints: number[] }) => void;
   'board:clear': (payload: { roomId: string; userId: string }) => void;
   'image:add': (payload: { roomId: string; image: ImageObject }) => void;
+  'image:move': (payload: { roomId: string; imageId: string; x: number; y: number }) => void;
 };
 
 export type ClientToServerEvents = {
@@ -68,6 +69,7 @@ export type ClientToServerEvents = {
   'stroke:end': (payload: { roomId: string; strokeId: string; finalPoints: number[] }) => void;
   'board:clear': (payload: { roomId: string; userId: string }) => void;
   'image:add': (payload: { roomId: string; image: ImageObject }) => void;
+  'image:move': (payload: { roomId: string; imageId: string; x: number; y: number }) => void;
 };
 
 export type InterServerEvents = Record<string, never>;

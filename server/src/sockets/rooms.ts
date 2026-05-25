@@ -112,6 +112,16 @@ export function addImage(roomId: string, image: ImageObject): void {
   room.updatedAt = Date.now();
 }
 
+export function moveImage(roomId: string, imageId: string, x: number, y: number): void {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  const img = room.images.find((i) => i.id === imageId);
+  if (!img) return;
+  img.x = x;
+  img.y = y;
+  room.updatedAt = Date.now();
+}
+
 export function startCleanupLoop(): NodeJS.Timeout {
   return setInterval(() => {
     const cutoff = Date.now() - ROOM_INACTIVITY_MS;

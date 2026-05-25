@@ -68,3 +68,10 @@ export const imageAddSchema = z.object({
   roomId: z.string().min(1).max(32),
   image: imageObjectSchema,
 });
+
+export const imageMoveSchema = z.object({
+  roomId: z.string().min(1).max(32),
+  imageId: z.string().min(1).max(64),
+  x: z.number().finite(),
+  y: z.number().finite(),
+});

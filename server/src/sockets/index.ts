@@ -9,6 +9,7 @@ import {
   createRoom,
   finalizeStroke,
   getRoom,
+  moveImage,
   removeUserBySocket,
   startCleanupLoop,
 } from './rooms.js';
@@ -16,6 +17,7 @@ import {
   boardClearSchema,
   cursorMoveSchema,
   imageAddSchema,
+  imageMoveSchema,
   roomJoinSchema,
   strokeEndSchema,
   strokeStartSchema,
@@ -117,6 +119,15 @@ export function attachSocketIo(httpServer: HttpServer, corsOrigin: string) {
       if (!getRoom(roomId)) return;
       addImage(roomId, image);
       socket.to(roomId).emit('image:add', parsed.data);
+    });
+
+    socket.on('image:move', (raw) => {
+      const parsed = imageMoveSchema.safeParse(raw);
+      if (!parsed.success) return;
+      const { roomId, imageId, x, y } = parsed.data;
+      if (socket.data.roomId !== roomId) return;
+      moveImage(roomId, imageId, x, y);
+      socket.to(roomId).emit('image:move', parsed.data);
     });
 
     socket.on('disconnect', () => {

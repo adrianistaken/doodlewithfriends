@@ -136,19 +136,40 @@ function onWheel(e: WheelEvent) {
   viewportTouched = true;
 }
 
-// Pan state. Pan is triggered by: the hand tool, holding space, or middle-click.
+// Pan state. Pan is triggered by: the hand tool over empty space, holding space, or middle-click.
 const isPanning = ref(false);
 const panStart = { screen: { x: 0, y: 0 }, viewport: { x: 0, y: 0 } };
+
+// Image-drag state. The hand tool over an image moves it instead of panning.
+type ImageDrag = { imageId: string; offsetX: number; offsetY: number };
+const imageDrag = ref<ImageDrag | null>(null);
 
 type KonvaEvt = { evt: MouseEvent | TouchEvent };
 
 function wantsPan(evt: MouseEvent | TouchEvent): boolean {
-  if (props.tool === 'hand') return true;
   if (evt instanceof MouseEvent) {
     return evt.button === 1 || (evt.button === 0 && spaceDown.value);
   }
   return false;
 }
+
+// Returns the image at the current pointer if any (hand-tool hit-test).
+function imageAtPointer(): ImageObject | null {
+  const stage = stageRef.value?.getNode();
+  if (!stage) return null;
+  const pos = stage.getPointerPosition();
+  if (!pos) return null;
+  const hit = stage.getIntersection(pos);
+  if (!hit) return null;
+  const name = hit.name();
+  if (!name.startsWith('image:')) return null;
+  const id = name.slice('image:'.length);
+  return props.images.find((i) => i.id === id) ?? null;
+}
+
+const emitImageMove = throttle((imageId: string, x: number, y: number) => {
+  props.socket.emit('image:move', { roomId: props.roomId, imageId, x, y });
+}, 16);
 
 function onPointerDown(e: KonvaEvt) {
   const evt = e.evt;
@@ -156,20 +177,52 @@ function onPointerDown(e: KonvaEvt) {
   if (evt instanceof TouchEvent && evt.touches.length > 1) return;
 
   if (wantsPan(evt)) {
-    const p = screenPointer();
-    if (!p) return;
-    isPanning.value = true;
-    panStart.screen = p;
-    panStart.viewport = { x: viewport.value.x, y: viewport.value.y };
+    startPan();
     if (evt instanceof MouseEvent) evt.preventDefault();
     return;
   }
+
+  if (props.tool === 'hand') {
+    const img = imageAtPointer();
+    if (img) {
+      const wp = worldPointer();
+      if (!wp) return;
+      imageDrag.value = {
+        imageId: img.id,
+        offsetX: wp.x - img.x,
+        offsetY: wp.y - img.y,
+      };
+      return;
+    }
+    startPan();
+    return;
+  }
+
   const p = worldPointer();
   if (!p) return;
   controller.start(p.x, p.y);
 }
 
+function startPan() {
+  const p = screenPointer();
+  if (!p) return;
+  isPanning.value = true;
+  panStart.screen = p;
+  panStart.viewport = { x: viewport.value.x, y: viewport.value.y };
+}
+
 function onPointerMove() {
+  const drag = imageDrag.value;
+  if (drag) {
+    const wp = worldPointer();
+    if (!wp) return;
+    const img = props.images.find((i) => i.id === drag.imageId);
+    if (!img) return;
+    img.x = wp.x - drag.offsetX;
+    img.y = wp.y - drag.offsetY;
+    emitImageMove(img.id, img.x, img.y);
+    return;
+  }
   if (isPanning.value) {
     const p = screenPointer();
     if (!p) return;
@@ -188,6 +241,21 @@ function onPointerMove() {
 }
 
 function onPointerUp() {
+  const drag = imageDrag.value;
+  if (drag) {
+    const img = props.images.find((i) => i.id === drag.imageId);
+    if (img) {
+      // Send a final, unthrottled position so listeners settle on the exact value.
+      props.socket.emit('image:move', {
+        roomId: props.roomId,
+        imageId: img.id,
+        x: img.x,
+        y: img.y,
+      });
+    }
+    imageDrag.value = null;
+    return;
+  }
   if (isPanning.value) {
     isPanning.value = false;
     return;
@@ -196,6 +264,7 @@ function onPointerUp() {
 }
 
 function onMouseLeave() {
+  if (imageDrag.value) imageDrag.value = null;
   isPanning.value = false;
   controller.end();
 }
@@ -228,6 +297,8 @@ function onTouchStart(e: TouchEvent) {
   }
   if (e.touches.length >= 2) {
     if (touchMode === 'draw') controller.end();
+    imageDrag.value = null;
+    isPanning.value = false;
     touchMode = 'gesture';
     const rect = wrapperRef.value!.getBoundingClientRect();
     gestureStart = {
@@ -285,25 +356,120 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', onKeyUp);
 });
 
-// Load HTMLImageElement instances for each ImageObject so Konva can render them.
-const imageElements = ref(new Map<string, HTMLImageElement>());
+// Each image gets its own offscreen canvas. Eraser strokes that cross the image
+// are baked into this canvas (destination-out), so the erased pixels travel with
+// the image when it's dragged. Other strokes stay in the strokes layer above.
+const imageCanvases = ref(new Map<string, HTMLCanvasElement>());
 
-function ensureImage(image: ImageObject) {
-  if (imageElements.value.has(image.id)) return;
+// Tracks, per (image, eraser-stroke), how many points we've already baked in.
+// Lets us paint only new segments incrementally as strokes stream in.
+const bakedPointCount = new Map<string, number>();
+const bakeKey = (imageId: string, strokeId: string) => `${imageId}:${strokeId}`;
+
+function ensureImageCanvas(image: ImageObject) {
+  if (imageCanvases.value.has(image.id)) return;
   const img = new Image();
   img.onload = () => {
-    imageElements.value.set(image.id, img);
-    imageElements.value = new Map(imageElements.value);
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext('2d');
+    if (ctx) ctx.drawImage(img, 0, 0, image.width, image.height);
+    imageCanvases.value.set(image.id, canvas);
+    imageCanvases.value = new Map(imageCanvases.value);
+    // Apply any eraser strokes that already overlap this image.
+    processEraserBakes();
   };
   img.src = image.url;
 }
 
 const visibleImages = computed(() => {
-  for (const img of props.images) ensureImage(img);
+  for (const img of props.images) ensureImageCanvas(img);
   return props.images
-    .map((img) => ({ img, el: imageElements.value.get(img.id) }))
-    .filter((x) => x.el !== undefined);
+    .map((img) => ({ img, canvas: imageCanvases.value.get(img.id) }))
+    .filter((x) => x.canvas !== undefined);
 });
+
+function strokeBoundingBox(points: number[]) {
+  if (points.length < 2) return null;
+  let minX = points[0], maxX = points[0], minY = points[1], maxY = points[1];
+  for (let i = 2; i < points.length; i += 2) {
+    const x = points[i];
+    const y = points[i + 1];
+    if (x < minX) minX = x; else if (x > maxX) maxX = x;
+    if (y < minY) minY = y; else if (y > maxY) maxY = y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function strokeOverlapsImage(stroke: Stroke, img: ImageObject): boolean {
+  const bb = strokeBoundingBox(stroke.points);
+  if (!bb) return false;
+  const r = stroke.size / 2;
+  return (
+    bb.maxX + r >= img.x &&
+    bb.minX - r <= img.x + img.width &&
+    bb.maxY + r >= img.y &&
+    bb.minY - r <= img.y + img.height
+  );
+}
+
+function bakeEraserSegment(
+  canvas: HTMLCanvasElement,
+  img: ImageObject,
+  stroke: Stroke,
+  fromIdx: number,
+) {
+  if (stroke.points.length < fromIdx + 2) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.save();
+  // Translate so eraser world coords land at image-local coords.
+  ctx.translate(-img.x, -img.y);
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.lineWidth = stroke.size;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#000';
+  ctx.beginPath();
+  ctx.moveTo(stroke.points[fromIdx], stroke.points[fromIdx + 1]);
+  for (let i = fromIdx + 2; i < stroke.points.length; i += 2) {
+    ctx.lineTo(stroke.points[i], stroke.points[i + 1]);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function batchRedraw() {
+  stageRef.value?.getNode().batchDraw();
+}
+
+function processEraserBakes() {
+  let anyBaked = false;
+  for (const stroke of props.strokes) {
+    if (stroke.tool !== 'eraser') continue;
+    for (const img of props.images) {
+      // Only bake eraser strokes drawn after the image was placed — otherwise
+      // a fresh image dropped over a pre-existing erased area would inherit
+      // marks that weren't meant for it.
+      if (stroke.createdAt < img.createdAt) continue;
+      const canvas = imageCanvases.value.get(img.id);
+      if (!canvas) continue;
+      if (!strokeOverlapsImage(stroke, img)) continue;
+      const key = bakeKey(img.id, stroke.id);
+      const baked = bakedPointCount.get(key) ?? 0;
+      if (stroke.points.length <= baked) continue;
+      // Step back two coords to keep the new segment connected to the last baked point.
+      const from = Math.max(0, baked - 2);
+      bakeEraserSegment(canvas, img, stroke, from);
+      bakedPointCount.set(key, stroke.points.length);
+      anyBaked = true;
+    }
+  }
+  if (anyBaked) batchRedraw();
+}
+
+watch(() => props.strokes, processEraserBakes, { deep: true });
 
 const cursorClass = computed(() => {
   if (isPanning.value) return 'cursor-grabbing';
@@ -335,10 +501,19 @@ const cursorClass = computed(() => {
     >
       <v-layer>
         <v-image
-          v-for="{ img, el } in visibleImages"
+          v-for="{ img, canvas } in visibleImages"
           :key="img.id"
-          :config="{ image: el, x: img.x, y: img.y, width: img.width, height: img.height }"
+          :config="{
+            image: canvas,
+            x: img.x,
+            y: img.y,
+            width: img.width,
+            height: img.height,
+            name: `image:${img.id}`,
+          }"
         />
+      </v-layer>
+      <v-layer :config="{ listening: false }">
         <v-line
           v-for="stroke in strokes"
           :key="stroke.id"
